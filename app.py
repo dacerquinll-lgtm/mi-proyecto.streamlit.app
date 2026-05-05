@@ -1,7 +1,7 @@
 import streamlit as st
 import joblib
 import numpy as np
-from supabase import create_client # Necesitas agregar 'supabase' a requirements.txt
+from supabase import create_client  # NUEVO
 
 # 1. Configuración de página
 st.set_page_config(
@@ -10,14 +10,14 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CONEXIÓN A SUPABASE ---
-# Usamos los secrets que configuraste en el panel de Streamlit
+# --- CONEXIÓN A BASE DE DATOS (NUEVO) ---
 try:
+    # Estos nombres deben coincidir con tus "Secrets" en Streamlit Cloud
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(url, key)
 except Exception as e:
-    st.error("Error al conectar con los Secrets de Supabase. Verifica el panel de Streamlit.")
+    st.error(f"Error de configuración de Base de Datos: {e}")
 
 # Estilo CSS personalizado
 st.markdown("""
@@ -34,7 +34,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # 2. Cargar el modelo
-@st.cache_resource 
+@st.cache_resource
 def load_model():
     return joblib.load('modelo_estudiante.pkl')
 
@@ -46,7 +46,8 @@ try:
     horas = st.sidebar.slider("Horas de estudio semanal", 0, 50, 15)
     asistencia = st.sidebar.slider("% de Asistencia a clases", 0, 100, 85)
     sueno = st.sidebar.slider("Horas de sueño diarias", 0, 12, 7)
-    st.sidebar.info("Modelo de Regresión Lineal entrenado.")
+    st.sidebar.divider()
+    st.sidebar.info("Este modelo utiliza un algoritmo de Regresión Lineal.")
 
     # --- CUERPO PRINCIPAL ---
     st.title("📊 Predictor de Rendimiento Académico")
@@ -60,14 +61,13 @@ try:
 
     st.divider()
 
-    # Botón central y resultado
+    # --- BOTÓN Y LÓGICA DE PREDICCIÓN ---
     if st.button("🚀 GENERAR PREDICCIÓN"):
-        # Realizar la predicción
-        datos_array = np.array([[horas, asistencia, sueno]])
-        prediccion = model.predict(datos_array)[0]
-        nota_final = round(float(prediccion), 1)
+        datos = np.array([[horas, asistencia, sueno]])
+        prediccion = model.predict(datos)[0]
+        nota_final = round(float(prediccion), 1) # Aseguramos que sea float para la BD
 
-        # MOSTRAR RESULTADOS
+        # Contenedor de resultado visual
         with st.container():
             c1, c2 = st.columns([1, 2])
             with c1:
@@ -85,19 +85,17 @@ try:
                 else:
                     st.write("### ⚠️ Atención recomendada")
 
-        # --- GUARDAR EN BASE DE DATOS ---
-        # Preparamos el diccionario con los nombres de tus columnas en Supabase
+        # --- GUARDAR EN SUPABASE (NUEVO) ---
         registro = {
-            "inputs": f"Horas: {horas}, Asistencia: {asistencia}, Sueño: {sueno}",
+            "inputs": f"Horas: {horas}, Asis: {asistencia}%, Sueño: {sueno}",
             "prediccion": str(nota_final)
         }
         
         try:
-            # Insertar en la tabla 'predicciones'
             supabase.table("predicciones").insert(registro).execute()
-            st.toast("✅ Datos guardados en la nube", icon="💾")
-        except Exception as db_error:
-            st.error(f"Error al guardar en la base de datos: {db_error}")
+            st.toast("✅ Predicción guardada en la base de datos", icon="💾")
+        except Exception as e:
+            st.error(f"No se pudo guardar en la BD: {e}")
 
 except Exception as e:
-    st.error(f"Error general en la aplicación: {e}")
+    st.error(f"Error al cargar la aplicación: {e}")
