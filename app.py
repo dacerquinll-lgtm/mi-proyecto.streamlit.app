@@ -1,20 +1,28 @@
 import streamlit as st
 import joblib
 import numpy as np
+from supabase import create_client # Necesitas agregar 'supabase' a requirements.txt
 
-# 1. Configuración de página con tema oscuro/claro profesional
+# 1. Configuración de página
 st.set_page_config(
     page_title="AI Student Predictor",
     page_icon="📊",
     layout="wide"
 )
 
-# Estilo CSS personalizado para mejorar la apariencia
+# --- CONEXIÓN A SUPABASE ---
+# Usamos los secrets que configuraste en el panel de Streamlit
+try:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(url, key)
+except Exception as e:
+    st.error("Error al conectar con los Secrets de Supabase. Verifica el panel de Streamlit.")
+
+# Estilo CSS personalizado
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
+    .main { background-color: #f5f7f9; }
     .stButton>button {
         width: 100%;
         border-radius: 5px;
@@ -26,7 +34,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # 2. Cargar el modelo
-@st.cache_resource # Esto hace que la app cargue más rápido
+@st.cache_resource 
 def load_model():
     return joblib.load('modelo_estudiante.pkl')
 
@@ -35,23 +43,16 @@ try:
 
     # --- BARRA LATERAL ---
     st.sidebar.header("⚙️ Configuración")
-    st.sidebar.write("Ajusta los parámetros para recalcular el pronóstico.")
-    
     horas = st.sidebar.slider("Horas de estudio semanal", 0, 50, 15)
     asistencia = st.sidebar.slider("% de Asistencia a clases", 0, 100, 85)
     sueno = st.sidebar.slider("Horas de sueño diarias", 0, 12, 7)
-    
-    st.sidebar.divider()
-    st.sidebar.info("Este modelo utiliza un algoritmo de Regresión Lineal entrenado con datos de rendimiento estudiantil.")
+    st.sidebar.info("Modelo de Regresión Lineal entrenado.")
 
     # --- CUERPO PRINCIPAL ---
-    st.title("📊 Predicctor de Rendimiento Académico")
+    st.title("📊 Predictor de Rendimiento Académico")
     st.markdown("### ¿Cuál es tu probabilidad de éxito?")
-    st.write("Esta herramienta utiliza Inteligencia Artificial para estimar tu nota final basándose en tus hábitos actuales.")
-
     st.divider()
 
-    # Layout de 3 columnas para mostrar los datos ingresados
     col1, col2, col3 = st.columns(3)
     col1.metric("Estudio", f"{horas} hrs/sem")
     col2.metric("Asistencia", f"{asistencia}%")
@@ -61,11 +62,12 @@ try:
 
     # Botón central y resultado
     if st.button("🚀 GENERAR PREDICCIÓN"):
-        datos = np.array([[horas, asistencia, sueno]])
-        prediccion = model.predict(datos)[0]
-        nota_final = round(prediccion, 1)
+        # Realizar la predicción
+        datos_array = np.array([[horas, asistencia, sueno]])
+        prediccion = model.predict(datos_array)[0]
+        nota_final = round(float(prediccion), 1)
 
-        # Contenedor de resultado
+        # MOSTRAR RESULTADOS
         with st.container():
             c1, c2 = st.columns([1, 2])
             with c1:
@@ -78,13 +80,24 @@ try:
                 if nota_final >= 85:
                     st.balloons()
                     st.write("### ✨ ¡Excelente desempeño!")
-                    st.write("Tu perfil coincide con los estudiantes de más alto rendimiento.")
                 elif nota_final >= 70:
                     st.write("### 👍 Vas por buen camino")
-                    st.write("Mantén este ritmo para asegurar tu aprobación.")
                 else:
                     st.write("### ⚠️ Atención recomendada")
-                    st.write("El modelo sugiere que aumentar las horas de estudio podría mejorar drásticamente tu resultado.")
+
+        # --- GUARDAR EN BASE DE DATOS ---
+        # Preparamos el diccionario con los nombres de tus columnas en Supabase
+        registro = {
+            "inputs": f"Horas: {horas}, Asistencia: {asistencia}, Sueño: {sueno}",
+            "prediccion": str(nota_final)
+        }
+        
+        try:
+            # Insertar en la tabla 'predicciones'
+            supabase.table("predicciones").insert(registro).execute()
+            st.toast("✅ Datos guardados en la nube", icon="💾")
+        except Exception as db_error:
+            st.error(f"Error al guardar en la base de datos: {db_error}")
 
 except Exception as e:
-    st.error(f"Error al cargar el modelo profesional: {e}")
+    st.error(f"Error general en la aplicación: {e}")
